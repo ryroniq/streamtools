@@ -1,3 +1,5 @@
+#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -12,6 +14,18 @@
 #define EVENT_BUF_LEN  ( 1024 * ( EVENT_SIZE + NAME_MAX + 1 ) )
 
 #define BUF_SIZE       100
+
+static volatile sig_atomic_t keep_running = 1;
+
+void handle_signal(int sig) {
+	(void)sig;
+	keep_running = 0;
+}
+
+void restore_cursor(void) {
+	printf("\033[?25h");
+	fflush(stdout);
+}
 
 void touch(const char *filepath) {
 	int fd = open(filepath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
@@ -60,6 +74,7 @@ int main(int argc, char *argv[]) {
 	}
 	const char *filepath = argv[1];
 
+	atexit(restore_cursor);
 	touch(filepath);
 	printf("\033[?25l");
 	print_content(filepath);
@@ -83,9 +98,19 @@ int main(int argc, char *argv[]) {
 		return EXIT_FAILURE;
 	}
 
-	while (1) {
+	struct sigaction sa = {0};
+	sa.sa_handler = handle_signal;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = 0; /* no SA_RESTART: interrupted read() must return EINTR */
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
+
+	while (keep_running) {
 		int length = read(fd, buffer, EVENT_BUF_LEN);
 		if (length < 0) {
+			if (errno == EINTR) {
+				break;
+			}
 			perror("read");
 			return EXIT_FAILURE;
 		}
@@ -94,8 +119,9 @@ int main(int argc, char *argv[]) {
 			struct inotify_event *event = (struct inotify_event *) &buffer[i];
 			time_t current_time = time(NULL);
 
-			if (event->mask & IN_MODIFY) {
-				if (difftime(current_time, last_event_time) >= debounce_time) {
+			if (event->mask & (IN_MODIFY | IN_CLOSE_WRITE)) {
+				if ((event->mask & IN_CLOSE_WRITE) ||
+					difftime(current_time, last_event_time) >= debounce_time) {
 					last_event_time = current_time;
 					print_content(filepath);
 				}
