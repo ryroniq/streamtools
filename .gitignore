@@ -1,0 +1,7 @@
+*.o
+*.orig
+*~
+\#*\#
+
+clock
+current-bgm
