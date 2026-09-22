@@ -7,12 +7,23 @@ else
     echo "Streaming to: $RTMP_BGM"
 fi
 
+if [ -z "$XDG_RUNTIME_DIR" ]; then
+    echo "\$XDG_RUNTIME_DIR is not set or is empty."
+    exit
+fi
+
 bgm_list=$(mktemp /tmp/bgmlist.XXXXXXXX)
 
 while true; do
     echo "Loop starting..."; echo
 	find -type f | grep -E '\.(mp3|m4a)$' | sed 's/^\.\///' | shuf > $bgm_list
 	cnt=$(wc -l < $bgm_list)
+
+	if [ "$cnt" -eq 0 ]; then
+	    echo "No .mp3/.m4a files found, waiting..."; echo
+	    sleep 5
+	    continue
+	fi
 
 	for ((i=1; i<=$cnt; i++)); do
 		filepath=$(sed -n "$i{p;q}" $bgm_list)
@@ -25,9 +36,9 @@ while true; do
         fi
 
         songname=${filename%.*}
-        echo "🎵 $songname" > $XDG_RUNTIME_DIR/current-bgm.txt
+        echo "🎵 $songname" > "$XDG_RUNTIME_DIR/current-bgm.txt"
 
-        ffmpeg -re -i "$filepath" -c:v copy -c:a aac -ar 48000 -f flv $RTMP_BGM
+        ffmpeg -re -i "$filepath" -c:v copy -c:a aac -ar 48000 -f flv "$RTMP_BGM"
 
         echo; echo "Waiting for next song... (Press 'q' to quit)"
         read -t 5 -n 1 input
