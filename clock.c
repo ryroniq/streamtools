@@ -1,3 +1,5 @@
+#include <errno.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -37,7 +39,26 @@ sleep_until_next_second()
 	req.tv_sec = 0;
 	req.tv_nsec = remaining_nsec;
 
-	return nanosleep(&req, NULL) == 0;
+	while (nanosleep(&req, &req) == -1) {
+		if (errno != EINTR) {
+			return 0;
+		}
+	}
+	return 1;
+}
+
+void
+restore_cursor()
+{
+	printf("\033[?25h");
+	fflush(stdout);
+}
+
+void
+handle_signal(int sig)
+{
+	(void)sig;
+	exit(0);
 }
 
 void
@@ -53,6 +74,10 @@ main(int argc, char *argv[])
 	struct tm *tm;
 	char date_buf[20], time_buf[20];
 
+	atexit(restore_cursor);
+	signal(SIGINT, handle_signal);
+	signal(SIGTERM, handle_signal);
+
 	printf("\033[?25l");
 	do {
 		printf("\033[2J\033[;1H");
@@ -60,8 +85,8 @@ main(int argc, char *argv[])
 		time_t now = time(NULL);
 
 		tm = localtime(&now);
-		strftime(time_buf, sizeof(date_buf), FMT_TIME, tm);
-		strftime(date_buf, sizeof(time_buf), FMT_DATE, tm);
+		strftime(time_buf, sizeof(time_buf), FMT_TIME, tm);
+		strftime(date_buf, sizeof(date_buf), FMT_DATE, tm);
 		printf(BOLD WHITE "  %s " CYAN "%s" RESET "\n\n",
 			   date_buf, time_buf );
 
